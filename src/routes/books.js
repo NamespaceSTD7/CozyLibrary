@@ -1,57 +1,81 @@
 const express = require('express');
-const Book = require('../models/book');
+const Book = require('../db/models/book');
+const validateObjectId = require('../middleware/validateObjectId');
 const router = express.Router();
+const { toDTO } = require('../routes/models/book');
 
 router.get('/', async (req, res) => {
     try {
         const books = await Book.find();
+        const apiBooks = books.map(book => toDTO(book));
         res.status(200);
-        res.json(books);
+        res.json({books: apiBooks});
     } catch (err) {
-        res.status(500).json(err);
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
-router.get('/:id', async(req, res) => {
+router.get('/:id', validateObjectId, async(req, res) => {
     const { id } = req.params;
     try {
         const book = await Book.findById(id);
-        res.status(200).json(book);
+        if (!book) {
+            return res.status(404).json({ message: 'Книга не найдена' });
+        }
+        res.status(200).json({book: toDTO(book)});
     } catch(err) {
-        res.status(500).json(err);
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
 router.post('/', async (req, res) => {
     const { book } = req.body;
-    const newBook = new Book(book);
+
+    if (!book || !book.title || !book.authors || !book.description) {
+        return res.status(400).json({
+            message: 'Некорректное тело запроса. Необходимо указать хотя бы title, authors и description.' 
+        });
+    }
     
     try {
+        const newBook = new Book(book);
         await newBook.save();
-        res.status(201).json(newBook);
+        res.status(201).json({book: toDTO(newBook)});
     } catch(err) {
-        res.status(500).json(err);
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', validateObjectId, async (req, res) => {
     const { id } = req.params;
-    const { book } = req.body; // если в book нет полей - ошибки не будет, а надо
+    const { book } = req.body;
+
+    if (!book || (!book.title && !book.author && !book.description && !book.isbn && !book.coverUrl && !book.fileUrl)) {
+        return res.status(400).json({ message: 'Некорректное тело запроса. Необходимо указать хотя бы одно поле.' });
+    }
+
     try {
         const updatedBook = await Book.findByIdAndUpdate(id, book, {new: true});
-        res.status(200).json(updatedBook);
+        if (!updatedBook) {
+            return res.status(404).json({ message: 'Книга не найдена' });
+        }
+        res.status(200).json({book: toDTO(updatedBook)});
     } catch (err) {
-        res.status(500).json(err);
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', validateObjectId, async (req, res) => {
     const { id } = req.params;
+
     try {
-        await Book.deleteOne({ _id: id });
+        const deletedBook = await Book.deleteOne({ _id: id });
+        if (deletedBook.deletedCount === 0) {
+            return res.status(404).json({ message: 'Книга не найдена' });
+        }
         res.status(204).end();
     } catch (err) {
-        res.status(500).json(err);
+        res.status(500).json({ message: 'Ошибка сервера', error: err.message });
     }
 });
 
